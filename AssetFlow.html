@@ -1152,4 +1152,225 @@ function resolveMaint(id){
   notify('Maintenance Resolved', `${assetName(m.assetId)} repaired and back to Available.`);
   toast('Marked resolved. Asset is Available again.'); renderMain();
 }
+* =========================================================================
+   7. ASSET AUDIT
+   ========================================================================= */
+let openAuditId = null;
+function renderAudit(el){
+  if(!canManageAssets()){ el.innerHTML=accessDenied(); return; }
+  el.innerHTML = `
+    <div class="topbar">
+      <div><div class="eyebrow">Structured verification</div><div class="page-title">Asset Audit</div><div class="page-sub">Run scoped audit cycles, flag discrepancies, and lock the record.</div></div>
+      <button class="btn" onclick="openNewAudit()">+ New Audit Cycle</button>
+    </div>
+    <div class="section">
+      <table><thead><tr><th>Cycle</th><th>Scope</th><th>Date range</th><th>Auditors</th><th>Status</th><th></th></tr></thead><tbody>
+      ${S.auditCycles.map(c=>`<tr><td>${c.name}</td><td>${deptName(c.scopeDept)} · ${c.scopeLoc}</td><td>${fmtDate(c.start)} – ${fmtDate(c.end)}</td><td>${c.auditors.map(empName).join(', ')}</td>
+      <td><span class="tagchip ${c.status==='Closed'?'status-Retired':'status-Reserved'}">${c.status}</span></td>
+      <td><button class="btn small secondary" onclick="openAuditCycle('${c.id}')">Open</button></td></tr>).join('') || `<tr class="empty-row"><td colspan="6">No audit cycles yet.</td></tr>}
+      </tbody></table>
+    </div>
+    ${openAuditId? auditCycleHtml(openAuditId): ''}
+  `;
+}
+function openNewAudit(){
+  openModal(`
+    <div class="modal-title">New audit cycle</div>
+    <div class="field"><label>Cycle name</label><input id="f-acyname" value="Audit-Cycle-${String(S.auditCycles.length+1).padStart(2,'0')}"></div>
+    <div class="field-row">
+      <div class="field"><label>Scope: department</label><select id="f-acydept">${S.departments.map(d=><option value="${d.id}">${d.name}</option>).join('')}</select></div>
+      <div class="field"><label>Scope: location</label><input id="f-acyloc" placeholder="e.g. HQ - 2F"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Start date</label><input id="f-acystart" type="date"></div>
+      <div class="field"><label>End date</label><input id="f-acyend" type="date"></div>
+    </div>
+    <div class="field"><label>Assign auditors</label>
+      <div class="checklist">${S.employees.filter(e=>e.status==='Active').map(e=><label><input type="checkbox" class="audCheck" value="${e.id}">${e.name} — ${e.role}</label>).join('')}</div>
+    </div>
+    <div class="modal-foot"><button class="btn secondary" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveAudit()">Create cycle</button></div>
+  `);
+}
+function saveAudit(){
+  const name=document.getElementById('f-acyname').value.trim();
+  const scopeDept=document.getElementById('f-acydept').value;
+  const scopeLoc=document.getElementById('f-acyloc').value||'All locations';
+  const start=document.getElementById('f-acystart').value;
+  const end=document.getElementById('f-acyend').value;
+  const auditors=[...document.querySelectorAll('.audCheck:checked')].map(c=>c.value);
+  if(!auditors.length){ toast('Assign at least one auditor.'); return; }
+  const c={id:uid('AC'), name, scopeDept, scopeLoc, start, end, auditors, status:'Open', items:[]};
+  S.auditCycles.push(c);
+  log(Created audit cycle ${name} scoped to ${deptName(scopeDept)});
+  closeModal(); toast('Audit cycle created.'); openAuditId=c.id; renderMain();
+}
+function openAuditCycle(id){ openAuditId=id; renderMain(); }
+function auditCycleHtml(id){
+  const c = S.auditCycles.find(x=>x.id===id);
+  const scopedAssets = S.assets.filter(a=>true); // simplified: audit all assets, scope shown as label
+  const discrepancies = c.items.filter(i=>i.result==='Missing'||i.result==='Damaged');
+  return `
+  <div class="section">
+    <div class="section-head">
+      <div><div class="section-title">${c.name}</div><div class="hint">Scope: ${deptName(c.scopeDept)} · ${c.scopeLoc} · Auditors: ${c.auditors.map(empName).join(', ')}</div></div>
+      <div style="display:flex;gap:8px;">
+      ${c.status==='Open'?<button class="btn danger small" onclick="closeAuditCycle('${c.id}')">Close Audit Cycle</button>:<span class="tagchip status-Retired">Locked</span>}
+      </div>
+    </div>
+    <table><thead><tr><th>Asset</th><th>Current status</th><th>Verification</th><th></th></tr></thead><tbody>
+    ${scopedAssets.map(a=>{
+      const item = c.items.find(i=>i.assetId===a.id);
+      return `<tr><td>${a.id} — ${a.name}</td><td><span class="tagchip ${statusClass(a.status)}">${a.status}</span></td>
+      <td>${item?<span class="tagchip ${item.result==='Verified'?'status-Available':item.result==='Missing'?'status-Lost':'status-Under_Maintenance'}">${item.result}</span>:'<span class="hint">Not checked</span>'}</td>
+      <td>${c.status==='Open'?<button class="btn small secondary" onclick="markAudit('${c.id}','${a.id}','Verified')">Verified</button> <button class="btn small secondary" onclick="markAudit('${c.id}','${a.id}','Missing')">Missing</button> <button class="btn small secondary" onclick="markAudit('${c.id}','${a.id}','Damaged')">Damaged</button>:''}</td>
+      </tr>`;
+    }).join('')}
+    </tbody></table>
+    ${discrepancies.length?`
+    <div style="margin-top:16px;">
+      <div class="section-title" style="margin-bottom:8px;">Discrepancy report</div>
+      <table><tbody>${discrepancies.map(d=><tr><td>${assetName(d.assetId)}</td><td><span class="tagchip ${d.result==='Missing'?'status-Lost':'status-Under_Maintenance'}">${d.result}</span></td></tr>).join('')}</tbody></table>
+    </div>`:''}
+  </div>`;
+}
+function markAudit(cycleId, assetId, result){
+  const c=S.auditCycles.find(x=>x.id===cycleId);
+  let item = c.items.find(i=>i.assetId===assetId);
+  if(item) item.result=result; else c.items.push({assetId, result});
+  log(Marked ${assetId} as ${result} in ${c.name});
+  if(result!=='Verified') notify('Audit Discrepancy Flagged', ${assetId} flagged ${result} in ${c.name}.);
+  renderMain();
+}
+function closeAuditCycle(id){
+  const c=S.auditCycles.find(x=>x.id===id);
+  c.status='Closed';
+  c.items.filter(i=>i.result==='Missing').forEach(i=>{
+    const a=S.assets.find(x=>x.id===i.assetId); if(a){ a.status='Lost'; a.history.push({type:'audit', text:Marked missing in ${c.name}, date:now().toISOString().slice(0,10)}); }
+  });
+  c.items.filter(i=>i.result==='Damaged').forEach(i=>{
+    const a=S.assets.find(x=>x.id===i.assetId); if(a && a.status!=='Lost'){ a.status='Under Maintenance'; a.history.push({type:'audit', text:Flagged damaged in ${c.name}, date:now().toISOString().slice(0,10)}); }
+  });
+  log(Closed audit cycle ${c.name});
+  toast('Audit cycle closed and asset statuses updated.'); renderMain();
+}
 
+/* =========================================================================
+   8. REPORTS & ANALYTICS
+   ========================================================================= */
+function renderReports(el){
+  if(!(isAdmin()||isAssetMgr()||isDeptHead())){ el.innerHTML=accessDenied(); return; }
+  const byCat = {};
+  S.categories.forEach(c=>byCat[c.name]=S.assets.filter(a=>a.category===c.id).length);
+  const maxCat = Math.max(1,...Object.values(byCat));
+
+  const maintByCat = {};
+  S.categories.forEach(c=>{
+    const assetIds = S.assets.filter(a=>a.category===c.id).map(a=>a.id);
+    maintByCat[c.name] = S.maintenance.filter(m=>assetIds.includes(m.assetId)).length;
+  });
+  const maxMaint = Math.max(1,...Object.values(maintByCat));
+
+  const deptAlloc = {};
+  S.departments.forEach(d=>deptAlloc[d.name]=0);
+  S.allocations.filter(a=>a.status==='Active').forEach(a=>{
+    let dName;
+    if(a.holderType==='Department') dName=deptName(a.holderId);
+    else { const e=S.employees.find(x=>x.id===a.holderId); dName = e?deptName(e.dept):'—'; }
+    deptAlloc[dName]=(deptAlloc[dName]||0)+1;
+  });
+  const maxDept = Math.max(1,...Object.values(deptAlloc));
+
+  const nearRetire = S.assets.filter(a=>a.status!=='Retired' && a.status!=='Disposed' && new Date(a.acqDate) < new Date('2022-06-01'));
+
+  el.innerHTML = `
+    <div class="topbar">
+      <div><div class="eyebrow">Operational insight</div><div class="page-title">Reports &amp; Analytics</div><div class="page-sub">Utilization, maintenance load, and allocation patterns across the org.</div></div>
+      <button class="btn secondary" onclick="exportCsv()">Export assets (CSV)</button>
+    </div>
+    <div class="grid" style="grid-template-columns:1fr 1fr;">
+      <div class="section">
+        <div class="section-title" style="margin-bottom:12px;">Assets by category</div>
+        ${Object.entries(byCat).map(([k,v])=><div class="bar-row"><div class="bar-label">${k}</div><div class="bar-track"><div class="bar-fill" style="width:${v/maxCat*100}%;background:var(--blue);"></div></div><div class="bar-val">${v}</div></div>).join('')}
+      </div>
+      <div class="section">
+        <div class="section-title" style="margin-bottom:12px;">Maintenance frequency by category</div>
+        ${Object.entries(maintByCat).map(([k,v])=><div class="bar-row"><div class="bar-label">${k}</div><div class="bar-track"><div class="bar-fill" style="width:${v/maxMaint*100}%;background:var(--amber);"></div></div><div class="bar-val">${v}</div></div>).join('')}
+      </div>
+      <div class="section">
+        <div class="section-title" style="margin-bottom:12px;">Department-wise allocation summary</div>
+        ${Object.entries(deptAlloc).map(([k,v])=><div class="bar-row"><div class="bar-label">${k}</div><div class="bar-track"><div class="bar-fill" style="width:${v/maxDept*100}%;background:var(--teal);"></div></div><div class="bar-val">${v}</div></div>).join('')}
+      </div>
+      <div class="section">
+        <div class="section-title" style="margin-bottom:12px;">Booking heatmap — peak windows</div>
+        ${bookingHeatmapRows()}
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-head"><div class="section-title">Nearing retirement / due for review</div></div>
+      <table><thead><tr><th>Tag</th><th>Name</th><th>Acquired</th><th>Condition</th><th>Status</th></tr></thead><tbody>
+      ${nearRetire.length?nearRetire.map(a=><tr><td>${a.id}</td><td>${a.name}</td><td>${fmtDate(a.acqDate)}</td><td>${a.condition}</td><td><span class="tagchip ${statusClass(a.status)}">${a.status}</span></td></tr>).join(''):<tr class="empty-row"><td colspan="5">Nothing flagged for retirement review.</td></tr>}
+      </tbody></table>
+    </div>
+  `;
+}
+function bookingHeatmapRows(){
+  const slots = {};
+  S.bookings.filter(b=>b.status!=='Cancelled').forEach(b=>{
+    const hr = new Date(b.start).getHours();
+    const label = ${hr}:00–${hr+1}:00;
+    slots[label]=(slots[label]||0)+1;
+  });
+  const entries = Object.entries(slots);
+  if(!entries.length) return <div class="hint">No booking data yet.</div>;
+  const max = Math.max(...entries.map(e=>e[1]));
+  return entries.map(([k,v])=><div class="bar-row"><div class="bar-label">${k}</div><div class="bar-track"><div class="bar-fill" style="width:${v/max*100}%;background:var(--violet);"></div></div><div class="bar-val">${v}</div></div>).join('');
+}
+function exportCsv(){
+  const rows = [['Tag','Name','Category','Serial','Location','Condition','Status','Bookable']];
+  S.assets.forEach(a=>rows.push([a.id,a.name,catName(a.category),a.serial,a.location,a.condition,a.status,a.bookable]));
+  const csv = rows.map(r=>r.map(c=>"${String(c).replace(/"/g,'""')}").join(',')).join('\n');
+  const blob = new Blob([csv],{type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download='assetflow-assets.csv'; a.click();
+  log('Exported asset directory as CSV');
+  toast('Export ready — check your downloads.');
+}
+
+/* =========================================================================
+   9. LOGS & NOTIFICATIONS
+   ========================================================================= */
+function renderLogs(el){
+  el.innerHTML = `
+    <div class="topbar"><div><div class="eyebrow">Stay in the loop</div><div class="page-title">Logs &amp; Notifications</div><div class="page-sub">Every action, tracked. Every alert, in one place.</div></div></div>
+    <div class="grid" style="grid-template-columns:1fr 1.2fr;">
+      <div class="section">
+        <div class="section-head"><div class="section-title">Notifications</div><button class="btn small secondary" onclick="markAllRead()">Mark all read</button></div>
+        <div style="display:flex;flex-direction:column;gap:8px;max-height:520px;overflow-y:auto;">
+        ${S.notifications.map(n=>`<div class="tag-card" style="padding:10px 12px;${n.read?'opacity:.55;':''}">
+          <div style="display:flex;justify-content:space-between;gap:8px;">
+            <span class="tagchip status-Reserved" style="font-size:10px;">${n.type}</span>
+            <span class="hint">${fmtDate(n.date)}</span>
+          </div>
+          <div style="font-size:12.5px;margin-top:6px;">${n.message}</div>
+        </div>).join('') || `<div class="hint">No notifications.</div>}
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-title" style="margin-bottom:12px;">Activity log</div>
+        <table><thead><tr><th>Actor</th><th>Action</th><th>When</th></tr></thead><tbody>
+        ${S.activityLog.map(l=><tr><td>${l.actor}</td><td>${l.action}</td><td style="font-family:var(--font-mono);font-size:11px;color:var(--slate);">${l.ts}</td></tr>).join('') || <tr class="empty-row"><td colspan="3">No activity yet.</td></tr>}
+        </tbody></table>
+      </div>
+    </div>
+  `;
+}
+function markAllRead(){ S.notifications.forEach(n=>n.read=true); renderMain(); }
+
+/* =========================================================================
+   BOOTSTRAP
+   ========================================================================= */
+loadState();
+populateDeptSelect(document.getElementById('su-dept'));
+</script>
+</body>
+</html>
