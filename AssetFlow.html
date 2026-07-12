@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AssetFlow — Asset & Resource Manifest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#16213A;
+  --ink-soft:#2C3B57;
+  --slate:#5B6B82;
+  --paper:#ECEFEF;
+  --paper-raised:#FFFFFF;
+  --line:#D7DCDD;
+  --line-strong:#B9C0C2;
+  --teal:#2E7D6B;
+  --teal-bg:#E2F0EB;
+  --blue:#2F5D8A;
+  --blue-bg:#E4EBF3;
+  --violet:#5B4B8A;
+  --violet-bg:#EAE5F3;
+  --amber:#B9781E;
+  --amber-bg:#F7ECD9;
+  --red:#B33A2A;
+  --red-bg:#F6E1DC;
+  --grey:#6B6F73;
+  --grey-bg:#E7E7E6;
+  --radius:3px;
+  --font-display:'Space Grotesk',sans-serif;
+  --font-body:'IBM Plex Sans',sans-serif;
+  --font-mono:'IBM Plex Mono',monospace;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;height:100%;}
+body{
+  font-family:var(--font-body);
+  background:var(--paper);
+  color:var(--ink);
+  font-size:14px;
+  -webkit-font-smoothing:antialiased;
+}
+button{font-family:inherit;cursor:pointer;}
+input,select,textarea{font-family:inherit;font-size:13px;}
+a{color:inherit;}
+::selection{background:var(--amber-bg);}
+
+/* ---------- perforation signature ---------- */
+.tag-card{
+  position:relative;
+  background:var(--paper-raised);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+}
+.tag-card::before{
+  content:"";
+  position:absolute;
+  top:-1px;left:14px;right:14px;height:1px;
+  background-image:radial-gradient(circle, var(--paper) 2px, transparent 2.2px);
+  background-size:12px 12px;
+  background-repeat:repeat-x;
+  background-position:center;
+  display:none;
+}
+.tag-card.punched::before{display:block;top:16px;}
+.tag-card.punched{padding-top:22px;}
+
+/* asset tag chip - signature element */
+.tagchip{
+  display:inline-flex;align-items:center;gap:6px;
+  font-family:var(--font-mono);
+  font-size:11px;letter-spacing:.03em;
+  padding:3px 9px 3px 7px;
+  border-radius:2px;
+  position:relative;
+  white-space:nowrap;
+}
+.tagchip::before{
+  content:"";
+  width:5px;height:5px;border-radius:50%;
+  background:currentColor;
+  opacity:.55;
+  flex:0 0 auto;
+}
+.status-Available{background:var(--teal-bg);color:var(--teal);}
+.status-Allocated{background:var(--blue-bg);color:var(--blue);}
+.status-Reserved{background:var(--violet-bg);color:var(--violet);}
+.status-Under_Maintenance{background:var(--amber-bg);color:var(--amber);}
+.status-Lost{background:var(--red-bg);color:var(--red);}
+.status-Retired{background:var(--grey-bg);color:var(--grey);}
+.status-Disposed{background:var(--grey-bg);color:var(--grey);}
+
+/* ---------- layout ---------- */
+#app{display:none;height:100vh;overflow:hidden;grid-template-columns:216px 1fr;}
+#app.active{display:grid;}
+
+#sidebar{
+  background:var(--ink);
+  color:#CCD4E0;
+  display:flex;flex-direction:column;
+  padding:0;
+  overflow-y:auto;
+}
+.brand{
+  padding:20px 18px 16px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+.brand-mark{
+  font-family:var(--font-display);
+  font-weight:700;
+  font-size:19px;
+  color:#fff;
+  display:flex;align-items:center;gap:8px;
+}
+.brand-mark .dot{width:8px;height:8px;border-radius:50%;background:var(--amber);}
+.brand-sub{font-family:var(--font-mono);font-size:10px;color:#7C8AA5;margin-top:3px;letter-spacing:.06em;text-transform:uppercase;}
+
+.nav-group{padding:14px 10px;}
+.nav-label{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#5E6C87;padding:6px 10px 4px;}
+.nav-item{
+  display:flex;align-items:center;gap:9px;
+  padding:8px 10px;border-radius:2px;
+  font-size:13px;color:#B6C0D4;
+  cursor:pointer;margin-bottom:1px;
+  border-left:2px solid transparent;
+}
+.nav-item:hover{background:rgba(255,255,255,.05);color:#fff;}
+.nav-item.active{background:rgba(217,142,57,.14);color:#fff;border-left:2px solid var(--amber);}
+.nav-icon{width:15px;text-align:center;font-family:var(--font-mono);font-size:12px;opacity:.8;}
+
+.sidebar-foot{
+  margin-top:auto;padding:14px 16px;border-top:1px solid rgba(255,255,255,.08);
+  font-size:12px;
+}
+.who{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.avatar{width:26px;height:26px;border-radius:50%;background:var(--amber);color:#231303;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;font-family:var(--font-display);}
+.who-name{color:#fff;font-weight:500;font-size:12.5px;}
+.who-role{color:#8493AC;font-size:10.5px;font-family:var(--font-mono);}
+.logout-link{color:#8493AC;font-size:11.5px;text-decoration:underline;cursor:pointer;}
+.logout-link:hover{color:#fff;}
+
+#main{overflow-y:auto;padding:24px 30px 60px;}
+.topbar{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;flex-wrap:wrap;gap:10px;}
+.page-title{font-family:var(--font-display);font-size:24px;font-weight:600;letter-spacing:-.01em;}
+.page-sub{color:var(--slate);font-size:12.5px;margin-top:3px;}
+.eyebrow{font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--slate);margin-bottom:4px;}
+
+/* ---------- generic components ---------- */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:8px 14px;border-radius:2px;border:1px solid var(--ink);
+  background:var(--ink);color:#fff;font-size:12.5px;font-weight:500;
+  transition:opacity .15s;
+}
+.btn:hover{opacity:.86;}
+.btn.secondary{background:transparent;color:var(--ink);border:1px solid var(--line-strong);}
+.btn.secondary:hover{background:#fff;}
+.btn.danger{background:var(--red);border-color:var(--red);}
+.btn.amber{background:var(--amber);border-color:var(--amber);}
+.btn.teal{background:var(--teal);border-color:var(--teal);}
+.btn.small{padding:5px 10px;font-size:11.5px;}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+
+.grid{display:grid;gap:14px;}
+.kpi-grid{grid-template-columns:repeat(6,1fr);}
+@media(max-width:1300px){.kpi-grid{grid-template-columns:repeat(3,1fr);}}
+.kpi{
+  background:var(--paper-raised);border:1px solid var(--line);border-radius:var(--radius);
+  padding:14px 14px 12px;position:relative;overflow:hidden;
+}
+.kpi-val{font-family:var(--font-display);font-size:26px;font-weight:700;}
+.kpi-label{font-size:11px;color:var(--slate);margin-top:2px;}
+.kpi::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;}
+.kpi.k-teal::after{background:var(--teal);}
+.kpi.k-blue::after{background:var(--blue);}
+.kpi.k-amber::after{background:var(--amber);}
+.kpi.k-violet::after{background:var(--violet);}
+.kpi.k-red::after{background:var(--red);}
+.kpi.k-grey::after{background:var(--grey);}
+
+.section{background:var(--paper-raised);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:18px;}
+.section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;}
+.section-title{font-family:var(--font-display);font-size:15px;font-weight:600;}
+
+table{width:100%;border-collapse:collapse;font-size:12.8px;}
+th{text-align:left;font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--slate);padding:8px 10px;border-bottom:1px solid var(--line-strong);}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle;}
+tr:hover td{background:#F7F8F7;}
+.empty-row td{text-align:center;color:var(--slate);padding:26px;font-style:italic;}
+
+.field{margin-bottom:12px;}
+.field label{display:block;font-size:11.5px;font-weight:600;color:var(--ink-soft);margin-bottom:4px;}
+.field input,.field select,.field textarea{
+  width:100%;padding:8px 10px;border:1px solid var(--line-strong);border-radius:2px;background:#fff;
+}
+.field textarea{min-height:64px;resize:vertical;}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.hint{font-size:11px;color:var(--slate);margin-top:3px;}
+
+.tabs{display:flex;gap:2px;margin-bottom:16px;border-bottom:1px solid var(--line-strong);}
+.tab{padding:9px 16px;font-size:12.5px;font-weight:500;color:var(--slate);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;}
+.tab.active{color:var(--ink);border-bottom:2px solid var(--amber);}
+
+.pill-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
+.pill{padding:5px 11px;border:1px solid var(--line-strong);border-radius:20px;font-size:11.5px;cursor:pointer;background:#fff;}
+.pill.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+.searchbar{padding:8px 12px;border:1px solid var(--line-strong);border-radius:2px;min-width:220px;background:#fff;}
+
+.modal-overlay{position:fixed;inset:0;background:rgba(22,33,58,.5);display:none;align-items:center;justify-content:center;z-index:100;padding:20px;}
+.modal-overlay.active{display:flex;}
+.modal{background:#fff;border-radius:var(--radius);max-width:480px;width:100%;max-height:88vh;overflow-y:auto;padding:22px 24px;}
+.modal-title{font-family:var(--font-display);font-size:17px;font-weight:600;margin-bottom:4px;}
+.modal-sub{font-size:12px;color:var(--slate);margin-bottom:16px;}
+.modal-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;}
+.alert{padding:10px 12px;border-radius:2px;font-size:12.5px;margin-bottom:14px;border-left:3px solid;}
+.alert.warn{background:var(--amber-bg);border-color:var(--amber);color:#7A501B;}
+.alert.err{background:var(--red-bg);border-color:var(--red);color:#7E281A;}
+.alert.ok{background:var(--teal-bg);border-color:var(--teal);color:#1F5545;}
+
+.toast-wrap{position:fixed;bottom:20px;right:20px;z-index:200;display:flex;flex-direction:column;gap:8px;}
+.toast{background:var(--ink);color:#fff;padding:11px 16px;border-radius:2px;font-size:12.5px;max-width:300px;box-shadow:0 6px 18px rgba(0,0,0,.18);border-left:3px solid var(--amber);animation:slidein .2s ease;}
+@keyframes slidein{from{transform:translateX(20px);opacity:0;}to{transform:translateX(0);opacity:1;}}
+
+.detail-drawer{position:fixed;top:0;right:0;bottom:0;width:420px;background:#fff;box-shadow:-8px 0 24px rgba(0,0,0,.12);z-index:90;transform:translateX(100%);transition:transform .2s ease;overflow-y:auto;padding:22px;}
+.detail-drawer.active{transform:translateX(0);}
+.drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.18);z-index:85;display:none;}
+.drawer-overlay.active{display:block;}
+.close-x{position:absolute;top:16px;right:16px;background:none;border:none;font-size:18px;color:var(--slate);}
+
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px;}
+.bar-label{width:130px;font-size:11.5px;color:var(--ink-soft);flex:0 0 auto;}
+.bar-track{flex:1;background:var(--paper);height:14px;border-radius:2px;overflow:hidden;}
+.bar-fill{height:100%;background:var(--blue);}
+.bar-val{width:34px;text-align:right;font-family:var(--font-mono);font-size:11px;color:var(--slate);}
+
+/* login */
+#loginScreen{min-height:100vh;display:flex;align-items:stretch;background:var(--ink);}
+.login-visual{flex:1.1;background:linear-gradient(160deg,#16213A,#1E2E4C);position:relative;display:flex;flex-direction:column;justify-content:center;padding:60px;color:#fff;overflow:hidden;}
+.login-visual .ghost-tag{position:absolute;font-family:var(--font-mono);font-size:12px;color:rgba(255,255,255,.14);border:1px dashed rgba(255,255,255,.14);padding:4px 10px;border-radius:2px;}
+.login-form-side{flex:0 0 460px;background:var(--paper-raised);display:flex;align-items:center;justify-content:center;padding:40px;}
+.login-box{width:100%;max-width:340px;}
+@media(max-width:840px){.login-visual{display:none;}#loginScreen{justify-content:center;}.login-form-side{flex:1;}}
+
+.role-badge{display:inline-block;font-family:var(--font-mono);font-size:10px;text-transform:uppercase;padding:2px 7px;border-radius:2px;background:var(--grey-bg);color:var(--grey);}
+.checklist{display:flex;flex-direction:column;gap:8px;max-height:180px;overflow-y:auto;border:1px solid var(--line);padding:8px;border-radius:2px;}
+.checklist label{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:400;}
+</style>
+</head>
+<body>
+
+<!-- ================= LOGIN ================= -->
+<div id="loginScreen">
+  <div class="login-visual">
+    <span class="ghost-tag" style="top:14%;left:10%;">AF-0114 · LAPTOP</span>
+    <span class="ghost-tag" style="top:62%;left:14%;">ROOM B2 · 09:00–10:00</span>
+    <span class="ghost-tag" style="top:24%;right:8%;">AUDIT-CYCLE-03</span>
+    <span class="ghost-tag" style="top:76%;right:12%;">STATUS: AVAILABLE</span>
+    <div class="eyebrow" style="color:#7C8AA5;">Enterprise Asset &amp; Resource Manifest</div>
+    <div style="font-family:var(--font-display);font-size:40px;font-weight:700;line-height:1.15;max-width:480px;">Every asset,<br>tagged, tracked,<br>and accounted for.</div>
+    <div style="color:#A9B4C9;font-size:13.5px;max-width:420px;margin-top:14px;line-height:1.6;">Departments, equipment, bookings and maintenance — one ledger, one source of truth. No spreadsheets. No guessing who has the projector.</div>
+  </div>
+  <div class="login-form-side">
+    <div class="login-box">
+      <div class="brand-mark" style="color:var(--ink);margin-bottom:22px;"><span class="dot"></span>AssetFlow</div>
+
+      <div id="loginPane">
+        <div class="eyebrow">Sign in</div>
+        <div style="font-family:var(--font-display);font-size:20px;font-weight:600;margin-bottom:16px;">Welcome back</div>
+        <div class="field"><label>Email</label><input id="li-email" type="email" placeholder="you@company.com" value="admin@assetflow.io"></div>
+        <div class="field"><label>Password</label><input id="li-pass" type="password" placeholder="••••••••" value="demo1234"></div>
+        <div id="loginErr"></div>
+        <button class="btn" style="width:100%;justify-content:center;" onclick="doLogin()">Log in</button>
+        <div style="margin-top:10px;font-size:11.5px;color:var(--slate);">Forgot password? <a style="text-decoration:underline;cursor:pointer;" onclick="toast('Password reset link sent (demo).')">Reset it</a></div>
+        <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line);font-size:12px;">
+          <div class="hint" style="margin-bottom:6px;">Demo accounts — click to autofill:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            <span class="pill" onclick="quickLogin('admin@assetflow.io')">Admin</span>
+            <span class="pill" onclick="quickLogin('meera@assetflow.io')">Asset Manager</span>
+            <span class="pill" onclick="quickLogin('arjun@assetflow.io')">Dept Head</span>
+            <span class="pill" onclick="quickLogin('priya@assetflow.io')">Employee</span>
+          </div>
+        </div>
+        <div style="margin-top:16px;font-size:12.5px;">New here? <a style="text-decoration:underline;cursor:pointer;font-weight:600;" onclick="showSignup()">Create an employee account</a></div>
+      </div>
+
+      <div id="signupPane" style="display:none;">
+        <div class="eyebrow">Create account</div>
+        <div style="font-family:var(--font-display);font-size:20px;font-weight:600;margin-bottom:6px;">Join AssetFlow</div>
+        <div class="hint" style="margin-bottom:14px;">Signup always creates a standard Employee account. Admins grant Department Head or Asset Manager access afterward from the Employee Directory.</div>
+        <div class="field"><label>Full name</label><input id="su-name" placeholder="Jordan Lee"></div>
+        <div class="field"><label>Email</label><input id="su-email" type="email" placeholder="jordan@company.com"></div>
+        <div class="field"><label>Password</label><input id="su-pass" type="password" placeholder="Create a password"></div>
+        <div class="field"><label>Department</label><select id="su-dept"></select></div>
+        <div id="signupErr"></div>
+        <button class="btn" style="width:100%;justify-content:center;" onclick="doSignup()">Create account</button>
+        <div style="margin-top:16px;font-size:12.5px;">Already have an account? <a style="text-decoration:underline;cursor:pointer;font-weight:600;" onclick="showLogin()">Log in</a></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= APP SHELL ================= -->
+<div id="app">
+  <div id="sidebar"></div>
+  <div id="main"></div>
+</div>
+
+<div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
+<div class="detail-drawer" id="drawer"></div>
+<div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalBody"></div></div>
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+/* =========================================================================
+   STATE
+   ========================================================================= */
+let S = null;
+let currentUser = null;
+let route = 'dashboard';
+let uidCounter = 1000;
+function uid(prefix){ uidCounter++; return prefix+'-'+uidCounter; }
+
+function seed(){
+  const departments = [
+    {id:'d1', name:'Engineering', head:'e2', parent:null, status:'Active'},
+    {id:'d2', name:'Facilities', head:'e5', parent:null, status:'Active'},
+    {id:'d3', name:'Sales', head:null, parent:null, status:'Active'},
+    {id:'d4', name:'IT', head:null, parent:'d1', status:'Active'},
+  ];
+  const categories = [
+    {id:'c1', name:'Electronics', field:'Warranty period (months)'},
+    {id:'c2', name:'Furniture', field:'Material'},
+    {id:'c3', name:'Vehicles', field:'Registration No.'},
+    {id:'c4', name:'IT Equipment', field:'Warranty period (months)'},
+  ];
+  const employees = [
+    {id:'e1', name:'Admin User', email:'admin@assetflow.io', dept:'d4', role:'Admin', status:'Active'},
+    {id:'e2', name:'Arjun Mehta', email:'arjun@assetflow.io', dept:'d1', role:'Department Head', status:'Active'},
+    {id:'e3', name:'Meera Nair', email:'meera@assetflow.io', dept:'d2', role:'Asset Manager', status:'Active'},
+    {id:'e4', name:'Priya Kulkarni', email:'priya@assetflow.io', dept:'d1', role:'Employee', status:'Active'},
+    {id:'e5', name:'Rajesh Iyer', email:'raj@assetflow.io', dept:'d2', role:'Employee', status:'Active'},
+    {id:'e6', name:'Sana Sheikh', email:'sana@assetflow.io', dept:'d3', role:'Employee', status:'Active'},
+    {id:'e7', name:'Dev Kapoor', email:'dev@assetflow.io', dept:'d4', role:'Employee', status:'Active'},
+  ];
+  const assets = [
+    {id:'AF-0101', name:'Dell Latitude 5440', category:'c4', serial:'SN-88213', acqDate:'2024-02-10', acqCost:82000, condition:'Good', location:'HQ - 3F', status:'Available', bookable:false, history:[]},
+    {id:'AF-0114', name:'ThinkPad X1 Carbon', category:'c1', serial:'SN-73310', acqDate:'2023-11-02', acqCost:110000, condition:'Good', location:'HQ - 2F', status:'Allocated', bookable:false, history:[{type:'allocation', text:'Allocated to Priya Kulkarni', date:'2024-06-01'}]},
+    {id:'AF-0122', name:'Herman Miller Chair', category:'c2', serial:'SN-19042', acqDate:'2022-08-15', acqCost:38000, condition:'Fair', location:'HQ - 1F', status:'Under Maintenance', bookable:false, history:[{type:'maintenance', text:'Raised: armrest broken', date:'2026-07-08'}]},
+    {id:'AF-0130', name:'Company Van — Tempo Traveller', category:'c3', serial:'MH12-AB-4471', acqDate:'2021-05-20', acqCost:1450000, condition:'Good', location:'HQ - Basement', status:'Available', bookable:true, history:[]},
+    {id:'AF-0142', name:'Conference Room B2', category:'c2', serial:'RM-B2', acqDate:'2020-01-01', acqCost:0, condition:'Good', location:'HQ - 2F', status:'Available', bookable:true, history:[]},
+    {id:'AF-0150', name:'Epson Projector EB-X06', category:'c4', serial:'SN-55210', acqDate:'2023-01-12', acqCost:34000, condition:'Good', location:'HQ - 2F', status:'Reserved', bookable:true, history:[]},
+    {id:'AF-0161', name:'HP LaserJet Pro', category:'c4', serial:'SN-90142', acqDate:'2022-03-30', acqCost:21000, condition:'Poor', location:'HQ - 1F', status:'Available', bookable:false, history:[]},
+    {id:'AF-0170', name:'Standing Desk', category:'c2', serial:'SN-11284', acqDate:'2023-07-19', acqCost:26000, condition:'Good', location:'HQ - 3F', status:'Retired', bookable:false, history:[]},
+    {id:'AF-0180', name:'Sedan — Company Car 2', category:'c3', serial:'MH12-CD-9021', acqDate:'2020-09-05', acqCost:980000, condition:'Fair', location:'HQ - Basement', status:'Available', bookable:true, history:[]},
+    {id:'AF-0191', name:'MacBook Pro 14"', category:'c1', serial:'SN-66190', acqDate:'2024-05-22', acqCost:198000, condition:'Good', location:'HQ - 2F', status:'Lost', bookable:false, history:[{type:'audit', text:'Marked missing in Audit-Cycle-02', date:'2026-05-14'}]},
+  ];
+  const allocations = [
+    {id:uid('AL'), assetId:'AF-0114', holderType:'Employee', holderId:'e4', allocatedDate:'2024-06-01', expectedReturn:'2026-06-20', status:'Active'},
+  ];
+  const transfers = [];
+  const bookings = [
+    {id:uid('BK'), assetId:'AF-0142', bookedBy:'e2', start:'2026-07-13T09:00', end:'2026-07-13T10:00', status:'Upcoming'},
+    {id:uid('BK'), assetId:'AF-0150', bookedBy:'e6', start:'2026-07-12T14:00', end:'2026-07-12T15:30', status:'Upcoming'},
+  ];
+  const maintenance = [
+    {id:uid('MR'), assetId:'AF-0122', issue:'Right armrest cracked, unsafe to use', priority:'Medium', status:'Approved', requestedBy:'e5', approvedBy:'e3', technician:null, date:'2026-07-08'},
+    {id:uid('MR'), assetId:'AF-0161', issue:'Paper jam every print, streaks on output', priority:'Low', status:'Pending', requestedBy:'e7', approvedBy:null, technician:null, date:'2026-07-10'},
+  ];
+  const auditCycles = [
+    {id:uid('AC'), name:'Audit-Cycle-02', scopeDept:'d2', scopeLoc:'HQ - 2F', start:'2026-05-01', end:'2026-05-15', auditors:['e3'], status:'Closed', items:[
+      {assetId:'AF-0191', result:'Missing'}
+    ]}
+  ];
+  const notifications = [
+    {id:uid('N'), type:'Overdue Return Alert', message:'AF-0114 (ThinkPad X1 Carbon) is overdue for return from Priya Kulkarni.', date:'2026-07-11', read:false},
+    {id:uid('N'), type:'Maintenance Approved', message:'Maintenance request for AF-0122 was approved by Meera Nair.', date:'2026-07-09', read:false},
+    {id:uid('N'), type:'Audit Discrepancy Flagged', message:'AF-0191 flagged Missing in Audit-Cycle-02.', date:'2026-05-14', read:true},
+  ];
+  const activityLog = [
+    {id:uid('LOG'), actor:'Meera Nair', action:'Approved maintenance request MR for AF-0122', ts:'2026-07-09 11:20'},
+    {id:uid('LOG'), actor:'System', action:'Flagged AF-0114 allocation as overdue', ts:'2026-07-11 00:05'},
+    {id:uid('LOG'), actor:'Admin User', action:'Closed Audit-Cycle-02', ts:'2026-05-15 17:40'},
+  ];
+  return {departments, categories, employees, assets, allocations, transfers, bookings, maintenance, auditCycles, notifications, activityLog};
+}
+
+function loadState(){ S = seed(); }
+
+/* =========================================================================
+   HELPERS
+   ========================================================================= */
+function empName(id){ const e=S.employees.find(x=>x.id===id); return e?e.name:'—'; }
+function deptName(id){ const d=S.departments.find(x=>x.id===id); return d?d.name:'—'; }
+function catName(id){ const c=S.categories.find(x=>x.id===id); return c?c.name:'—'; }
+function assetName(id){ const a=S.assets.find(x=>x.id===id); return a?a.name:id; }
+function statusClass(s){ return 'status-'+s.replace(/ /g,'_'); }
+function fmtMoney(n){ return '₹'+Number(n).toLocaleString('en-IN'); }
+function fmtDate(d){ if(!d) return '—'; const dt=new Date(d); if(isNaN(dt)) return d; return dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}); }
+function fmtDateTime(d){ if(!d) return '—'; const dt=new Date(d); if(isNaN(dt)) return d; return dt.toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }
+function now(){ return new Date('2026-07-12T10:00:00'); }
+
+function log(action){
+  S.activityLog.unshift({id:uid('LOG'), actor: currentUser?currentUser.name:'System', action, ts: now().toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})});
+}
+function notify(type, message){
+  S.notifications.unshift({id:uid('N'), type, message, date: now().toISOString().slice(0,10), read:false});
+}
+function toast(msg){
+  const wrap = document.getElementById('toastWrap');
+  const t = document.createElement('div');
+  t.className='toast'; t.textContent=msg;
+  wrap.appendChild(t);
+  setTimeout(()=>t.remove(), 3600);
+}
+
+function isAdmin(){ return currentUser.role==='Admin'; }
+function isAssetMgr(){ return currentUser.role==='Asset Manager'; }
+function isDeptHead(){ return currentUser.role==='Department Head'; }
+function canManageAssets(){ return isAdmin()||isAssetMgr(); }
+function canApprove(){ return isAdmin()||isAssetMgr()||isDeptHead(); }
+
+/* =========================================================================
+   AUTH
+   ========================================================================= */
+function populateDeptSelect(sel){
+  sel.innerHTML = S.departments.filter(d=>d.status==='Active').map(d=>`<option value="${d.id}">${d.name}</option>`).join('');
+}
+
+function showSignup(){
+  document.getElementById('loginPane').style.display='none';
+  document.getElementById('signupPane').style.display='block';
+  populateDeptSelect(document.getElementById('su-dept'));
+}
+function showLogin(){
+  document.getElementById('signupPane').style.display='none';
+  document.getElementById('loginPane').style.display='block';
+}
+function quickLogin(email){
+  document.getElementById('li-email').value = email;
+  document.getElementById('li-pass').value = 'demo1234';
+}
+function doLogin(){
+  const email = document.getElementById('li-email').value.trim().toLowerCase();
+  const pass = document.getElementById('li-pass').value;
+  const errBox = document.getElementById('loginErr');
+  if(!email || !pass){ errBox.innerHTML = `<div class="alert err">Enter both email and password.</div>`; return; }
+  const user = S.employees.find(e=>e.email.toLowerCase()===email);
+  if(!user){ errBox.innerHTML = `<div class="alert err">No account found for that email.</div>`; return; }
+  if(user.status==='Inactive'){ errBox.innerHTML = `<div class="alert err">This account is deactivated. Contact your Admin.</div>`; return; }
+  currentUser = user;
+  enterApp();
+}
+function doSignup(){
+  const name=document.getElementById('su-name').value.trim();
+  const email=document.getElementById('su-email').value.trim().toLowerCase();
+  const pass=document.getElementById('su-pass').value;
+  const dept=document.getElementById('su-dept').value;
+  const errBox=document.getElementById('signupErr');
+  if(!name||!email||!pass){ errBox.innerHTML=`<div class="alert err">Fill in all fields to continue.</div>`; return; }
+  if(S.employees.some(e=>e.email.toLowerCase()===email)){ errBox.innerHTML=`<div class="alert err">An account already exists for this email.</div>`; return; }
+  const newEmp = {id:uid('e'), name, email, dept, role:'Employee', status:'Active'};
+  S.employees.push(newEmp);
+  log(`New employee account created: ${name} (${email})`);
+  currentUser = newEmp;
+  enterApp();
+}
+function logout(){
+  currentUser=null;
+  document.getElementById('app').classList.remove('active');
+  document.getElementById('loginScreen').style.display='flex';
+  showLogin();
+  document.getElementById('li-pass').value='';
+}
+function enterApp(){
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('app').classList.add('active');
+  route='dashboard';
+  renderSidebar();
+  renderMain();
+}
+
+/* =========================================================================
+   SIDEBAR / NAV
+   ========================================================================= */
+const NAV = [
+  {group:'Overview', items:[
+    {id:'dashboard', label:'Dashboard', icon:'◆', roles:['Admin','Asset Manager','Department Head','Employee']},
+  ]},
+  {group:'Setup', items:[
+    {id:'orgsetup', label:'Organization Setup', icon:'⚙', roles:['Admin']},
+  ]},
+  {group:'Assets', items:[
+    {id:'directory', label:'Asset Directory', icon:'▤', roles:['Admin','Asset Manager','Department Head','Employee']},
+    {id:'allocation', label:'Allocation & Transfer', icon:'⇄', roles:['Admin','Asset Manager','Department Head','Employee']},
+    {id:'booking', label:'Resource Booking', icon:'▦', roles:['Admin','Asset Manager','Department Head','Employee']},
+    {id:'maintenance', label:'Maintenance', icon:'✚', roles:['Admin','Asset Manager','Department Head','Employee']},
+    {id:'audit', label:'Asset Audit', icon:'☑', roles:['Admin','Asset Manager']},
+  ]},
+  {group:'Insight', items:[
+    {id:'reports', label:'Reports & Analytics', icon:'▨', roles:['Admin','Asset Manager','Department Head']},
+    {id:'logs', label:'Logs & Notifications', icon:'☰', roles:['Admin','Asset Manager','Department Head','Employee']},
+  ]},
+];
+
+function renderSidebar(){
+  const el = document.getElementById('sidebar');
+  const initials = currentUser.name.split(' ').map(w=>w[0]).slice(0,2).join('');
+  let html = `<div class="brand"><div class="brand-mark"><span class="dot"></span>AssetFlow</div><div class="brand-sub">Asset &amp; Resource Manifest</div></div>`;
+  NAV.forEach(g=>{
+    const items = g.items.filter(i=>i.roles.includes(currentUser.role));
+    if(!items.length) return;
+    html += `<div class="nav-group"><div class="nav-label">${g.group}</div>`;
+    items.forEach(i=>{
+      html += `<div class="nav-item ${route===i.id?'active':''}" onclick="go('${i.id}')"><span class="nav-icon">${i.icon}</span>${i.label}</div>`;
+    });
+    html += `</div>`;
+  });
+  html += `<div class="sidebar-foot">
+    <div class="who"><div class="avatar">${initials}</div><div><div class="who-name">${currentUser.name}</div><div class="who-role">${currentUser.role}</div></div></div>
+    <span class="logout-link" onclick="logout()">Log out</span>
+  </div>`;
+  el.innerHTML = html;
+}
+function go(r){ route=r; renderSidebar(); renderMain(); }
+
+function renderMain(){
+  const el = document.getElementById('main');
+  const map = {
+    dashboard: renderDashboard, orgsetup: renderOrgSetup, directory: renderDirectory,
+    allocation: renderAllocation, booking: renderBooking, maintenance: renderMaintenance,
+    audit: renderAudit, reports: renderReports, logs: renderLogs
+  };
+  el.innerHTML = '';
+  (map[route]||renderDashboard)(el);
+}
+
+/* =========================================================================
+   MODAL / DRAWER HELPERS
+   ========================================================================= */
+function openModal(html){
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modalOverlay').classList.add('active');
+}
+function closeModal(){ document.getElementById('modalOverlay').classList.remove('active'); }
+function openDrawer(html){
+  document.getElementById('drawer').innerHTML = `<button class="close-x" onclick="closeDrawer()">✕</button>`+html;
+  document.getElementById('drawer').classList.add('active');
+  document.getElementById('drawerOverlay').classList.add('active');
+}
+function closeDrawer(){
+  document.getElementById('drawer').classList.remove('active');
+  document.getElementById('drawerOverlay').classList.remove('active');
+}
