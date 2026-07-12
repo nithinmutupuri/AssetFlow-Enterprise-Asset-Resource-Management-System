@@ -552,3 +552,604 @@ function closeDrawer(){
   document.getElementById('drawer').classList.remove('active');
   document.getElementById('drawerOverlay').classList.remove('active');
 }
+  
+/* =========================================================================
+
+   1. DASHBOARD
+   ========================================================================= */
+function renderDashboard(el){
+  const available = S.assets.filter(a=>a.status==='Available').length;
+  const allocated = S.assets.filter(a=>a.status==='Allocated').length;
+  const maintToday = S.maintenance.filter(m=>['Approved','In Progress'].includes(m.status)).length;
+  const activeBookings = S.bookings.filter(b=>b.status==='Upcoming'||b.status==='Ongoing').length;
+  const pendingTransfers = S.transfers.filter(t=>t.status==='Requested').length;
+  const upcomingReturns = S.allocations.filter(a=>a.status==='Active' && a.expectedReturn && new Date(a.expectedReturn) >= now()).length;
+  const overdue = S.allocations.filter(a=>a.status==='Active' && a.expectedReturn && new Date(a.expectedReturn) < now());
+  const overdueBookings = S.bookings.filter(b=>b.status==='Upcoming' && new Date(b.start) < now());
+
+  el.innerHTML = `
+    <div class="topbar">
+      <div><div class="eyebrow">Operational snapshot</div><div class="page-title">Dashboard</div><div class="page-sub">Welcome back, ${currentUser.name.split(' ')[0]}. Here's what's moving today, ${fmtDate(now())}.</div></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn secondary" onclick="go('directory');openRegisterAsset();">+ Register Asset</button>
+        <button class="btn secondary" onclick="go('booking')">+ Book Resource</button>
+        <button class="btn" onclick="go('maintenance');openRaiseMaintenance();">+ Raise Maintenance</button>
+      </div>
+    </div>
+
+    <div class="grid kpi-grid" style="margin-bottom:20px;">
+      <div class="kpi k-teal"><div class="kpi-val">${available}</div><div class="kpi-label">Assets available</div></div>
+      <div class="kpi k-blue"><div class="kpi-val">${allocated}</div><div class="kpi-label">Assets allocated</div></div>
+      <div class="kpi k-amber"><div class="kpi-val">${maintToday}</div><div class="kpi-label">Maintenance active</div></div>
+      <div class="kpi k-violet"><div class="kpi-val">${activeBookings}</div><div class="kpi-label">Active bookings</div></div>
+      <div class="kpi k-grey"><div class="kpi-val">${pendingTransfers}</div><div class="kpi-label">Pending transfers</div></div>
+      <div class="kpi k-teal"><div class="kpi-val">${upcomingReturns}</div><div class="kpi-label">Upcoming returns</div></div>
+    </div>
+
+    <div class="section">
+      <div class="section-head"><div class="section-title">Overdue returns</div><span class="tagchip status-Lost">${overdue.length} overdue</span></div>
+      <table><thead><tr><th>Asset</th><th>Held by</th><th>Expected return</th><th>Days overdue</th><th></th></tr></thead>
+      <tbody>
+      ${overdue.length? overdue.map(a=>{
+        const days = Math.floor((now()-new Date(a.expectedReturn))/86400000);
+        return `<tr><td>${assetName(a.assetId)} <span style="color:var(--slate);font-family:var(--font-mono);font-size:11px;">${a.assetId}</span></td><td>${a.holderType==='Employee'?empName(a.holderId):deptName(a.holderId)}</td><td>${fmtDate(a.expectedReturn)}</td><td><span class="tagchip status-Lost">${days}d</span></td><td><button class="btn small secondary" onclick="go('allocation')">Review</button></td></tr>`;
+      }).join('') : `<tr class="empty-row"><td colspan="5">Nothing overdue — the fleet is behaving.</td></tr>`}
+      </tbody></table>
+    </div>
+
+    <div class="grid" style="grid-template-columns:1fr 1fr;">
+      <div class="section">
+        <div class="section-head"><div class="section-title">Upcoming bookings</div></div>
+        <table><thead><tr><th>Resource</th><th>Booked by</th><th>Slot</th></tr></thead><tbody>
+        ${S.bookings.filter(b=>b.status==='Upcoming').slice(0,5).map(b=>`<tr><td>${assetName(b.assetId)}</td><td>${empName(b.bookedBy)}</td><td>${fmtDateTime(b.start)} – ${new Date(b.end).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</td></tr>`).join('') || `<tr class="empty-row"><td colspan="3">No upcoming bookings.</td></tr>`}
+        </tbody></table>
+      </div>
+      <div class="section">
+        <div class="section-head"><div class="section-title">Maintenance in flight</div></div>
+        <table><thead><tr><th>Asset</th><th>Priority</th><th>Status</th></tr></thead><tbody>
+        ${S.maintenance.filter(m=>!['Resolved','Rejected'].includes(m.status)).slice(0,5).map(m=>`<tr><td>${assetName(m.assetId)}</td><td>${m.priority}</td><td><span class="tagchip status-${m.status==='Pending'?'Reserved':m.status==='In Progress'?'Under_Maintenance':'Allocated'}">${m.status}</span></td></tr>`).join('') || `<tr class="empty-row"><td colspan="3">No open maintenance requests.</td></tr>`}
+        </tbody></table>
+      </div>
+    </div>
+  `;
+}
+
+/* =========================================================================
+   2. ORG SETUP (Admin)
+   ========================================================================= */
+let orgTab='dept';
+function renderOrgSetup(el){
+  if(!isAdmin()){ el.innerHTML=accessDenied(); return; }
+  el.innerHTML = `
+    <div class="topbar"><div><div class="eyebrow">Master data</div><div class="page-title">Organization Setup</div><div class="page-sub">Everything else in AssetFlow depends on this data being right.</div></div></div>
+    <div class="tabs">
+      <div class="tab ${orgTab==='dept'?'active':''}" onclick="setOrgTab('dept')">Departments</div>
+      <div class="tab ${orgTab==='cat'?'active':''}" onclick="setOrgTab('cat')">Asset Categories</div>
+      <div class="tab ${orgTab==='emp'?'active':''}" onclick="setOrgTab('emp')">Employee Directory</div>
+    </div>
+    <div id="orgTabBody"></div>
+  `;
+  renderOrgTabBody();
+}
+function setOrgTab(t){ orgTab=t; renderOrgTabBody(); document.querySelectorAll('.tabs .tab').forEach((n,i)=>{}); renderMain(); }
+function renderOrgTabBody(){
+  const body = document.getElementById('orgTabBody');
+  if(!body) return;
+  if(orgTab==='dept') body.innerHTML = deptTabHtml();
+  if(orgTab==='cat') body.innerHTML = catTabHtml();
+  if(orgTab==='emp') body.innerHTML = empTabHtml();
+}
+function deptTabHtml(){
+  return `
+  <div class="section">
+    <div class="section-head"><div class="section-title">Departments</div><button class="btn small" onclick="openDeptForm()">+ New Department</button></div>
+    <table><thead><tr><th>Name</th><th>Head</th><th>Parent</th><th>Status</th><th></th></tr></thead><tbody>
+    ${S.departments.map(d=>`<tr><td>${d.name}</td><td>${d.head?empName(d.head):'—'}</td><td>${d.parent?deptName(d.parent):'—'}</td><td><span class="tagchip status-${d.status==='Active'?'Available':'Retired'}">${d.status}</span></td>
+    <td><button class="btn small secondary" onclick="openDeptForm('${d.id}')">Edit</button> <button class="btn small secondary" onclick="toggleDeptStatus('${d.id}')">${d.status==='Active'?'Deactivate':'Activate'}</button></td></tr>`).join('')}
+    </tbody></table>
+  </div>`;
+}
+function openDeptForm(id){
+  const d = id? S.departments.find(x=>x.id===id): null;
+  openModal(`
+    <div class="modal-title">${d?'Edit department':'New department'}</div>
+    <div class="modal-sub">Departments organize employees and drive allocation scoping.</div>
+    <div class="field"><label>Department name</label><input id="f-dname" value="${d?d.name:''}" placeholder="e.g. Marketing"></div>
+    <div class="field"><label>Department Head</label><select id="f-dhead"><option value="">— None yet —</option>${S.employees.map(e=>`<option value="${e.id}" ${d&&d.head===e.id?'selected':''}>${e.name}</option>`).join('')}</select></div>
+    <div class="field"><label>Parent department (optional)</label><select id="f-dparent"><option value="">— No parent —</option>${S.departments.filter(x=>!d||x.id!==d.id).map(x=>`<option value="${x.id}" ${d&&d.parent===x.id?'selected':''}>${x.name}</option>`).join('')}</select></div>
+    <div class="modal-foot"><button class="btn secondary" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveDept('${id||''}')">Save department</button></div>
+  `);
+}
+function saveDept(id){
+  const name=document.getElementById('f-dname').value.trim();
+  if(!name){ toast('Department name is required.'); return; }
+  const head=document.getElementById('f-dhead').value||null;
+  const parent=document.getElementById('f-dparent').value||null;
+  if(id){
+    const d=S.departments.find(x=>x.id===id); d.name=name; d.head=head; d.parent=parent;
+    log(`Updated department ${name}`);
+  } else {
+    S.departments.push({id:uid('d'), name, head, parent, status:'Active'});
+    log(`Created department ${name}`);
+  }
+  closeModal(); toast('Department saved.'); renderMain();
+}
+function toggleDeptStatus(id){
+  const d=S.departments.find(x=>x.id===id);
+  d.status = d.status==='Active'?'Inactive':'Active';
+  log(`${d.status==='Active'?'Reactivated':'Deactivated'} department ${d.name}`);
+  renderMain(); toast(`${d.name} marked ${d.status}.`);
+}
+
+function catTabHtml(){
+  return `
+  <div class="section">
+    <div class="section-head"><div class="section-title">Asset categories</div><button class="btn small" onclick="openCatForm()">+ New Category</button></div>
+    <table><thead><tr><th>Category</th><th>Custom field</th><th>Assets in category</th><th></th></tr></thead><tbody>
+    ${S.categories.map(c=>`<tr><td>${c.name}</td><td>${c.field||'—'}</td><td>${S.assets.filter(a=>a.category===c.id).length}</td><td><button class="btn small secondary" onclick="openCatForm('${c.id}')">Edit</button></td></tr>`).join('')}
+    </tbody></table>
+  </div>`;
+}
+function openCatForm(id){
+  const c = id? S.categories.find(x=>x.id===id): null;
+  openModal(`
+    <div class="modal-title">${c?'Edit category':'New asset category'}</div>
+    <div class="field"><label>Category name</label><input id="f-cname" value="${c?c.name:''}" placeholder="e.g. Lab Equipment"></div>
+    <div class="field"><label>Category-specific field (optional)</label><input id="f-cfield" value="${c?c.field||'':''}" placeholder="e.g. Warranty period (months)"></div>
+    <div class="modal-foot"><button class="btn secondary" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveCat('${id||''}')">Save category</button></div>
+  `);
+}
+function saveCat(id){
+  const name=document.getElementById('f-cname').value.trim();
+  if(!name){ toast('Category name is required.'); return; }
+  const field=document.getElementById('f-cfield').value.trim();
+  if(id){ const c=S.categories.find(x=>x.id===id); c.name=name; c.field=field; log(`Updated category ${name}`); }
+  else { S.categories.push({id:uid('c'), name, field}); log(`Created category ${name}`); }
+  closeModal(); toast('Category saved.'); renderMain();
+}
+
+function empTabHtml(){
+  return `
+  <div class="section">
+    <div class="section-head"><div class="section-title">Employee directory</div><div class="hint">Role promotion happens only here — no self-assigned admin access.</div></div>
+    <table><thead><tr><th>Name</th><th>Email</th><th>Department</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>
+    ${S.employees.map(e=>`<tr><td>${e.name}</td><td style="font-family:var(--font-mono);font-size:11.5px;">${e.email}</td><td>${deptName(e.dept)}</td><td><span class="role-badge">${e.role}</span></td><td><span class="tagchip status-${e.status==='Active'?'Available':'Retired'}">${e.status}</span></td>
+    <td><button class="btn small secondary" onclick="openPromote('${e.id}')">Promote</button> <button class="btn small secondary" onclick="toggleEmpStatus('${e.id}')">${e.status==='Active'?'Deactivate':'Activate'}</button></td></tr>`).join('')}
+    </tbody></table>
+  </div>`;
+}
+function openPromote(id){
+  const e = S.employees.find(x=>x.id===id);
+  openModal(`
+    <div class="modal-title">Promote ${e.name}</div>
+    <div class="modal-sub">Current role: <span class="role-badge">${e.role}</span></div>
+    <div class="field"><label>New role</label><select id="f-newrole">
+      <option value="Employee" ${e.role==='Employee'?'selected':''}>Employee</option>
+      <option value="Department Head" ${e.role==='Department Head'?'selected':''}>Department Head</option>
+      <option value="Asset Manager" ${e.role==='Asset Manager'?'selected':''}>Asset Manager</option>
+      <option value="Admin" ${e.role==='Admin'?'selected':''}>Admin</option>
+    </select></div>
+    <div class="modal-foot"><button class="btn secondary" onclick="closeModal()">Cancel</button><button class="btn" onclick="savePromote('${id}')">Confirm role change</button></div>
+  `);
+}
+function savePromote(id){
+  const e=S.employees.find(x=>x.id===id);
+  const newRole=document.getElementById('f-newrole').value;
+  const old=e.role; e.role=newRole;
+  log(`Changed ${e.name}'s role from ${old} to ${newRole}`);
+  closeModal(); toast(`${e.name} is now ${newRole}.`); renderMain();
+}
+function toggleEmpStatus(id){
+  const e=S.employees.find(x=>x.id===id);
+  e.status = e.status==='Active'?'Inactive':'Active';
+  log(`${e.status==='Active'?'Reactivated':'Deactivated'} employee ${e.name}`);
+  renderMain(); toast(`${e.name} marked ${e.status}.`);
+}
+
+function accessDenied(){
+  return `<div class="section" style="text-align:center;padding:60px 20px;">
+    <div style="font-family:var(--font-display);font-size:18px;font-weight:600;margin-bottom:6px;">This area is restricted</div>
+    <div style="color:var(--slate);font-size:13px;">Your role (${currentUser.role}) doesn't have access to this screen.</div>
+  </div>`;
+}
+
+/* =========================================================================
+   3. ASSET DIRECTORY
+   ========================================================================= */
+let dirFilters = {search:'', status:'All', category:'All'};
+function renderDirectory(el){
+  el.innerHTML = `
+    <div class="topbar">
+      <div><div class="eyebrow">${S.assets.length} assets tracked</div><div class="page-title">Asset Directory</div><div class="page-sub">Register, search, and track every asset through its lifecycle.</div></div>
+      ${canManageAssets()?`<button class="btn" onclick="openRegisterAsset()">+ Register Asset</button>`:''}
+    </div>
+    <div class="section">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+        <input class="searchbar" placeholder="Search by tag, name, serial…" value="${dirFilters.search}" oninput="dirFilters.search=this.value; renderMain();">
+        <select class="searchbar" onchange="dirFilters.status=this.value; renderMain();">
+          ${['All','Available','Allocated','Reserved','Under Maintenance','Lost','Retired','Disposed'].map(s=>`<option ${dirFilters.status===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+        <select class="searchbar" onchange="dirFilters.category=this.value; renderMain();">
+          <option value="All" ${dirFilters.category==='All'?'selected':''}>All categories</option>
+          ${S.categories.map(c=>`<option value="${c.id}" ${dirFilters.category===c.id?'selected':''}>${c.name}</option>`).join('')}
+        </select>
+      </div>
+      <table><thead><tr><th>Tag</th><th>Name</th><th>Category</th><th>Location</th><th>Condition</th><th>Status</th><th>Bookable</th><th></th></tr></thead><tbody>
+      ${filteredAssets().map(a=>`<tr>
+        <td class="tagchip status-${statusClass(a.status)==='status-Available'?'Available':'Reserved'}" style="font-family:var(--font-mono);">${a.id}</td>
+        <td>${a.name}</td><td>${catName(a.category)}</td><td>${a.location}</td><td>${a.condition}</td>
+        <td><span class="tagchip ${statusClass(a.status)}">${a.status}</span></td>
+        <td>${a.bookable?'Yes':'No'}</td>
+        <td><button class="btn small secondary" onclick="openAssetDetail('${a.id}')">View</button></td>
+      </tr>`).join('') || `<tr class="empty-row"><td colspan="8">No assets match those filters.</td></tr>`}
+      </tbody></table>
+    </div>
+  `;
+}
+function filteredAssets(){
+  return S.assets.filter(a=>{
+    const s = dirFilters.search.toLowerCase();
+    const matchSearch = !s || a.id.toLowerCase().includes(s) || a.name.toLowerCase().includes(s) || a.serial.toLowerCase().includes(s);
+    const matchStatus = dirFilters.status==='All' || a.status===dirFilters.status;
+    const matchCat = dirFilters.category==='All' || a.category===dirFilters.category;
+    return matchSearch && matchStatus && matchCat;
+  });
+}
+function nextAssetTag(){
+  const nums = S.assets.map(a=>parseInt(a.id.split('-')[1])).filter(n=>!isNaN(n));
+  const next = (nums.length?Math.max(...nums):100)+1;
+  return 'AF-'+String(next).padStart(4,'0');
+}
+function openRegisterAsset(){
+  openModal(`
+    <div class="modal-title">Register new asset</div>
+    <div class="modal-sub">Tag <b>${nextAssetTag()}</b> will be assigned automatically.</div>
+    <div class="field"><label>Asset name</label><input id="f-aname" placeholder="e.g. Dell Latitude 5440"></div>
+    <div class="field-row">
+      <div class="field"><label>Category</label><select id="f-acat">${S.categories.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select></div>
+      <div class="field"><label>Serial number</label><input id="f-aserial" placeholder="SN-XXXXX"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Acquisition date</label><input id="f-adate" type="date"></div>
+      <div class="field"><label>Acquisition cost (₹)</label><input id="f-acost" type="number" placeholder="0"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Condition</label><select id="f-acond"><option>Good</option><option>Fair</option><option>Poor</option></select></div>
+      <div class="field"><label>Location</label><input id="f-aloc" placeholder="e.g. HQ - 2F"></div>
+    </div>
+    <div class="field"><label><input type="checkbox" id="f-abook" style="width:auto;margin-right:6px;">Shared / bookable resource</label></div>
+    <div class="modal-foot"><button class="btn secondary" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveAsset()">Register asset</button></div>
+  `);
+}
+function saveAsset(){
+  const name=document.getElementById('f-aname').value.trim();
+  const serial=document.getElementById('f-aserial').value.trim();
+  if(!name||!serial){ toast('Name and serial number are required.'); return; }
+  const tag = nextAssetTag();
+  const asset = {
+    id:tag, name, category:document.getElementById('f-acat').value,
+    serial, acqDate:document.getElementById('f-adate').value||fmtDate(now()),
+    acqCost:Number(document.getElementById('f-acost').value)||0,
+    condition:document.getElementById('f-acond').value, location:document.getElementById('f-aloc').value||'Unassigned',
+    status:'Available', bookable:document.getElementById('f-abook').checked, history:[]
+  };
+  S.assets.push(asset);
+  log(`Registered new asset ${tag} — ${name}`);
+  notify('Asset Registered', `${tag} (${name}) was registered and is Available.`);
+  closeModal(); toast(`${tag} registered.`); renderMain();
+}
+function openAssetDetail(id){
+  const a = S.assets.find(x=>x.id===id);
+  const allocHist = S.allocations.filter(al=>al.assetId===id);
+  const maintHist = S.maintenance.filter(m=>m.assetId===id);
+  openDrawer(`
+    <div class="tagchip ${statusClass(a.status)}" style="margin-bottom:10px;">${a.status}</div>
+    <div style="font-family:var(--font-display);font-size:19px;font-weight:600;">${a.name}</div>
+    <div style="font-family:var(--font-mono);color:var(--slate);font-size:12px;margin-bottom:16px;">${a.id} · ${a.serial}</div>
+    <div class="section" style="padding:12px 14px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12.5px;">
+        <div><b>Category</b><br>${catName(a.category)}</div>
+        <div><b>Location</b><br>${a.location}</div>
+        <div><b>Condition</b><br>${a.condition}</div>
+        <div><b>Acquired</b><br>${fmtDate(a.acqDate)}</div>
+        <div><b>Cost</b><br>${fmtMoney(a.acqCost)}</div>
+        <div><b>Bookable</b><br>${a.bookable?'Yes':'No'}</div>
+      </div>
+    </div>
+    <div style="margin-top:16px;font-family:var(--font-display);font-weight:600;font-size:13px;">Allocation history</div>
+    <table style="margin-top:6px;"><tbody>
+    ${allocHist.length?allocHist.map(al=>`<tr><td>${al.holderType==='Employee'?empName(al.holderId):deptName(al.holderId)}</td><td>${fmtDate(al.allocatedDate)}</td><td><span class="tagchip status-${al.status==='Active'?'Allocated':'Retired'}">${al.status}</span></td></tr>`).join(''):`<tr class="empty-row"><td>No allocation history.</td></tr>`}
+    </tbody></table>
+    <div style="margin-top:16px;font-family:var(--font-display);font-weight:600;font-size:13px;">Maintenance history</div>
+    <table style="margin-top:6px;"><tbody>
+    ${maintHist.length?maintHist.map(m=>`<tr><td>${m.issue.slice(0,28)}${m.issue.length>28?'…':''}</td><td>${fmtDate(m.date)}</td><td><span class="tagchip status-${m.status==='Resolved'?'Available':m.status==='Rejected'?'Lost':'Under_Maintenance'}">${m.status}</span></td></tr>`).join(''):`<tr class="empty-row"><td>No maintenance history.</td></tr>`}
+    </tbody></table>
+  `);
+}
+
+/* =========================================================================
+   4. ALLOCATION & TRANSFER
+   ========================================================================= */
+function renderAllocation(el){
+  const pendingTransfers = S.transfers.filter(t=>t.status==='Requested');
+  el.innerHTML = `
+    <div class="topbar"><div><div class="eyebrow">Who holds what</div><div class="page-title">Allocation &amp; Transfer</div><div class="page-sub">Assets can't be double-allocated — conflicting requests become transfer requests instead.</div></div></div>
+
+    ${pendingTransfers.length?`
+    <div class="section">
+      <div class="section-head"><div class="section-title">Pending transfer requests</div></div>
+      <table><thead><tr><th>Asset</th><th>From</th><th>To</th><th>Requested</th><th></th></tr></thead><tbody>
+      ${pendingTransfers.map(t=>`<tr><td>${assetName(t.assetId)}</td><td>${empName(t.fromEmp)}</td><td>${empName(t.toEmp)}</td><td>${fmtDate(t.date)}</td>
+      <td>${canApprove()?`<button class="btn small teal" onclick="approveTransfer('${t.id}')">Approve</button> <button class="btn small secondary" onclick="rejectTransfer('${t.id}')">Reject</button>`:'<span class="hint">Awaiting approval</span>'}</td></tr>`).join('')}
+      </tbody></table>
+    </div>`:''}
+
+    <div class="section">
+      <div class="section-head"><div class="section-title">Assets</div></div>
+      <table><thead><tr><th>Tag</th><th>Name</th><th>Status</th><th>Held by</th><th>Expected return</th><th></th></tr></thead><tbody>
+      ${S.assets.filter(a=>!a.bookable).map(a=>{
+        const alloc = S.allocations.find(al=>al.assetId===a.id && al.status==='Active');
+        const overdue = alloc && alloc.expectedReturn && new Date(alloc.expectedReturn)<now();
+        return `<tr>
+          <td style="font-family:var(--font-mono);font-size:11.5px;">${a.id}</td><td>${a.name}</td>
+          <td><span class="tagchip ${statusClass(a.status)}">${a.status}</span></td>
+          <td>${alloc?(alloc.holderType==='Employee'?empName(alloc.holderId):deptName(alloc.holderId)):'—'}</td>
+          <td>${alloc?`${fmtDate(alloc.expectedReturn)} ${overdue?'<span class=\"tagchip status-Lost\" style=\"margin-left:4px;\">overdue</span>':''}`:'—'}</td>
+          <td>
+          ${a.status==='Allocated'?`<button class="btn small secondary" onclick="markReturned('${a.id}')">Mark Returned</button> <button class="btn small amber" onclick="openTransferRequest('${a.id}')">Request Transfer</button>`
+            :a.status==='Available'?`<button class="btn small" onclick="openAllocate('${a.id}')">Allocate</button>`:`<span class="hint">Locked — ${a.status}</span>`}
+          </td>
+        </tr>`;
+      }).join('')}
+      </tbody></table>
+    </div>
+  `;
+}
+function openAllocate(assetId){
+  const a=S.assets.find(x=>x.id===assetId);
+  openModal(`
+    <div class="modal-title">Allocate ${a.id}</div>
+    <div class="modal-sub">${a.name}</div>
+    <div class="field"><label>Allocate to</label><select id="f-holdtype" onchange="toggleHolderSelect()"><option value="Employee">Employee</option><option value="Department">Department</option></select></div>
+    <div class="field" id="holderSelectWrap"><label>Employee</label><select id="f-holder">${S.employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select></div>
+    <div class="field"><label>Expected return date (optional)</label><input id="f-retdate" type="date"></div>
+    <div class="modal-foot"><button class="btn secondary" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveAllocate('${assetId}')">Allocate asset</button></div>
+  `);
+}
+function toggleHolderSelect(){
+  const type = document.getElementById('f-holdtype').value;
+  const wrap = document.getElementById('holderSelectWrap');
+  if(type==='Employee'){
+    wrap.innerHTML = `<label>Employee</label><select id="f-holder">${S.employees.filter(e=>e.status==='Active').map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select>`;
+  } else {
+    wrap.innerHTML = `<label>Department</label><select id="f-holder">${S.departments.filter(d=>d.status==='Active').map(d=>`<option value="${d.id}">${d.name}</option>`).join('')}</select>`;
+  }
+}
+function saveAllocate(assetId){
+  const a = S.assets.find(x=>x.id===assetId);
+  if(a.status==='Allocated'){ toast('This asset was just taken — try a transfer request instead.'); closeModal(); renderMain(); return; }
+  const holderType = document.getElementById('f-holdtype').value;
+  const holderId = document.getElementById('f-holder').value;
+  const expectedReturn = document.getElementById('f-retdate').value;
+  S.allocations.push({id:uid('AL'), assetId, holderType, holderId, allocatedDate: now().toISOString().slice(0,10), expectedReturn, status:'Active'});
+  a.status='Allocated';
+  a.history.push({type:'allocation', text:`Allocated to ${holderType==='Employee'?empName(holderId):deptName(holderId)}`, date: now().toISOString().slice(0,10)});
+  log(`Allocated ${assetId} to ${holderType==='Employee'?empName(holderId):deptName(holderId)}`);
+  notify('Asset Assigned', `${assetId} (${a.name}) was allocated to ${holderType==='Employee'?empName(holderId):deptName(holderId)}.`);
+  closeModal(); toast('Asset allocated.'); renderMain();
+}
+function openTransferRequest(assetId){
+  const a=S.assets.find(x=>x.id===assetId);
+  const alloc = S.allocations.find(al=>al.assetId===assetId && al.status==='Active');
+  openModal(`
+    <div class="modal-title">Request transfer — ${a.id}</div>
+    <div class="alert warn">Currently held by <b>${alloc.holderType==='Employee'?empName(alloc.holderId):deptName(alloc.holderId)}</b>. This request needs approval before reallocation.</div>
+    <div class="field"><label>Transfer to (employee)</label><select id="f-transto">${S.employees.filter(e=>e.status==='Active' && e.id!==alloc.holderId).map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select></div>
+    <div class="field"><label>Reason (optional)</label><textarea id="f-transreason" placeholder="Why does this need to move?"></textarea></div>
+    <div class="modal-foot"><button class="btn secondary" onclick="closeModal()">Cancel</button><button class="btn amber" onclick="saveTransferRequest('${assetId}')">Submit request</button></div>
+  `);
+}
+function saveTransferRequest(assetId){
+  const alloc = S.allocations.find(al=>al.assetId===assetId && al.status==='Active');
+  const toEmp = document.getElementById('f-transto').value;
+  S.transfers.push({id:uid('TR'), assetId, fromEmp:alloc.holderId, toEmp, date: now().toISOString().slice(0,10), status:'Requested'});
+  log(`Transfer requested for ${assetId} → ${empName(toEmp)}`);
+  notify('Transfer Requested', `Transfer requested for ${assetId} to ${empName(toEmp)}.`);
+  closeModal(); toast('Transfer request submitted for approval.'); renderMain();
+}
+function approveTransfer(id){
+  const t = S.transfers.find(x=>x.id===id);
+  t.status='Approved';
+  const alloc = S.allocations.find(al=>al.assetId===t.assetId && al.status==='Active');
+  if(alloc) alloc.status='Returned';
+  const a = S.assets.find(x=>x.id===t.assetId);
+  S.allocations.push({id:uid('AL'), assetId:t.assetId, holderType:'Employee', holderId:t.toEmp, allocatedDate: now().toISOString().slice(0,10), expectedReturn:'', status:'Active'});
+  a.history.push({type:'allocation', text:`Transferred to ${empName(t.toEmp)}`, date: now().toISOString().slice(0,10)});
+  t.status='Re-allocated';
+  log(`Approved transfer of ${t.assetId} to ${empName(t.toEmp)}`);
+  notify('Transfer Approved', `${t.assetId} was transferred to ${empName(t.toEmp)}.`);
+  toast('Transfer approved and asset re-allocated.'); renderMain();
+}
+function rejectTransfer(id){
+  const t=S.transfers.find(x=>x.id===id); t.status='Rejected';
+  log(`Rejected transfer request for ${t.assetId}`);
+  toast('Transfer request rejected.'); renderMain();
+}
+function markReturned(assetId){
+  openModal(`
+    <div class="modal-title">Return ${assetId}</div>
+    <div class="field"><label>Condition check-in notes</label><textarea id="f-retnotes" placeholder="Describe the asset's condition on return"></textarea></div>
+    <div class="modal-foot"><button class="btn secondary" onclick="closeModal()">Cancel</button><button class="btn teal" onclick="saveReturn('${assetId}')">Confirm return</button></div>
+  `);
+}
+function saveReturn(assetId){
+  const a=S.assets.find(x=>x.id===assetId);
+  const alloc=S.allocations.find(al=>al.assetId===assetId && al.status==='Active');
+  const notes = document.getElementById('f-retnotes').value;
+  if(alloc) alloc.status='Returned';
+  a.status='Available';
+  a.history.push({type:'allocation', text:`Returned. Notes: ${notes||'—'}`, date: now().toISOString().slice(0,10)});
+  log(`${assetId} marked returned and available`);
+  notify('Asset Returned', `${assetId} was returned and is now Available.`);
+  closeModal(); toast('Asset marked returned.'); renderMain();
+}
+
+/* =========================================================================
+   5. RESOURCE BOOKING
+   ========================================================================= */
+let selectedResource = null;
+function renderBooking(el){
+  const resources = S.assets.filter(a=>a.bookable);
+  if(!selectedResource && resources.length) selectedResource = resources[0].id;
+  const res = S.assets.find(a=>a.id===selectedResource);
+  const myBookings = S.bookings.filter(b=>b.assetId===selectedResource).sort((a,b)=>new Date(a.start)-new Date(b.start));
+
+  el.innerHTML = `
+    <div class="topbar"><div><div class="eyebrow">Shared resources</div><div class="page-title">Resource Booking</div><div class="page-sub">Time-slot booking with automatic overlap rejection.</div></div></div>
+    <div class="pill-row">
+      ${resources.map(r=>`<span class="pill ${selectedResource===r.id?'active':''}" onclick="selectResource('${r.id}')">${r.name}</span>`).join('')}
+    </div>
+    <div class="grid" style="grid-template-columns:1.4fr 1fr;">
+      <div class="section">
+        <div class="section-head"><div class="section-title">${res?res.name:''} — bookings</div><span class="tagchip ${statusClass(res.status)}">${res.status}</span></div>
+        <table><thead><tr><th>Booked by</th><th>Start</th><th>End</th><th>Status</th><th></th></tr></thead><tbody>
+        ${myBookings.length?myBookings.map(b=>`<tr><td>${empName(b.bookedBy)}</td><td>${fmtDateTime(b.start)}</td><td>${fmtDateTime(b.end)}</td>
+        <td><span class="tagchip ${b.status==='Cancelled'?'status-Lost':b.status==='Completed'?'status-Retired':b.status==='Ongoing'?'status-Under_Maintenance':'status-Reserved'}">${b.status}</span></td>
+        <td>${b.status==='Upcoming'?`<button class="btn small secondary" onclick="cancelBooking('${b.id}')">Cancel</button>`:''}</td></tr>`).join(''):`<tr class="empty-row"><td colspan="5">No bookings yet for this resource.</td></tr>`}
+        </tbody></table>
+      </div>
+      <div class="section">
+        <div class="section-title" style="margin-bottom:12px;">Book this resource</div>
+        <div class="field"><label>Start</label><input id="f-bstart" type="datetime-local"></div>
+        <div class="field"><label>End</label><input id="f-bend" type="datetime-local"></div>
+        <div id="bookErr"></div>
+        <button class="btn" style="width:100%;justify-content:center;" onclick="saveBooking()">Confirm booking</button>
+        <div class="hint" style="margin-top:8px;">Overlapping requests are rejected automatically — e.g. if 9:00–10:00 is booked, a 9:30–10:30 request is blocked but 10:00–11:00 is fine.</div>
+      </div>
+    </div>
+  `;
+}
+function selectResource(id){ selectedResource=id; renderMain(); }
+function computeBookingStatus(b){
+  if(b.status==='Cancelled') return 'Cancelled';
+  const s=new Date(b.start), e=new Date(b.end), n=now();
+  if(n<s) return 'Upcoming'; if(n>=s&&n<=e) return 'Ongoing'; return 'Completed';
+}
+function saveBooking(){
+  const start=document.getElementById('f-bstart').value;
+  const end=document.getElementById('f-bend').value;
+  const errBox=document.getElementById('bookErr');
+  if(!start||!end){ errBox.innerHTML=`<div class="alert err">Pick both a start and end time.</div>`; return; }
+  if(new Date(end)<=new Date(start)){ errBox.innerHTML=`<div class="alert err">End time must be after start time.</div>`; return; }
+  const overlap = S.bookings.some(b=>b.assetId===selectedResource && b.status!=='Cancelled' &&
+    new Date(start) < new Date(b.end) && new Date(end) > new Date(b.start));
+  if(overlap){ errBox.innerHTML=`<div class="alert err">This slot overlaps an existing booking. Choose a time that doesn't intersect it.</div>`; return; }
+  S.bookings.push({id:uid('BK'), assetId:selectedResource, bookedBy:currentUser.id, start, end, status:'Upcoming'});
+  log(`Booked ${assetName(selectedResource)} for ${fmtDateTime(start)}–${fmtDateTime(end)}`);
+  notify('Booking Confirmed', `${assetName(selectedResource)} booked ${fmtDateTime(start)}–${fmtDateTime(end)}.`);
+  toast('Booking confirmed.'); document.getElementById('f-bstart').value=''; document.getElementById('f-bend').value=''; renderMain();
+}
+function cancelBooking(id){
+  const b=S.bookings.find(x=>x.id===id); b.status='Cancelled';
+  log(`Cancelled booking for ${assetName(b.assetId)}`);
+  notify('Booking Cancelled', `Booking for ${assetName(b.assetId)} was cancelled.`);
+  toast('Booking cancelled.'); renderMain();
+}
+
+/* =========================================================================
+   6. MAINTENANCE
+   ========================================================================= */
+function renderMaintenance(el){
+  el.innerHTML = `
+    <div class="topbar">
+      <div><div class="eyebrow">Repairs go through approval</div><div class="page-title">Maintenance Management</div><div class="page-sub">Pending → Approved/Rejected → Technician Assigned → In Progress → Resolved.</div></div>
+      <button class="btn" onclick="openRaiseMaintenance()">+ Raise Request</button>
+    </div>
+    <div class="section">
+      <table><thead><tr><th>Asset</th><th>Issue</th><th>Priority</th><th>Requested by</th><th>Status</th><th></th></tr></thead><tbody>
+      ${S.maintenance.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(m=>`<tr>
+        <td>${assetName(m.assetId)}</td><td>${m.issue}</td>
+        <td><span class="tagchip ${m.priority==='High'?'status-Lost':m.priority==='Medium'?'status-Under_Maintenance':'status-Available'}">${m.priority}</span></td>
+        <td>${empName(m.requestedBy)}</td>
+        <td><span class="tagchip ${statusClass(mStatusColor(m.status))}">${m.status}</span></td>
+        <td>${maintActions(m)}</td>
+      </tr>`).join('') || `<tr class="empty-row"><td colspan="6">No maintenance requests yet.</td></tr>`}
+      </tbody></table>
+    </div>
+  `;
+}
+function mStatusColor(status){
+  return {Pending:'Reserved', Approved:'Allocated', Rejected:'Lost', 'Technician Assigned':'Under Maintenance', 'In Progress':'Under Maintenance', Resolved:'Available'}[status]||'Retired';
+}
+function maintActions(m){
+  if(!canManageAssets()) return '<span class="hint">—</span>';
+  if(m.status==='Pending') return `<button class="btn small teal" onclick="approveMaint('${m.id}')">Approve</button> <button class="btn small secondary" onclick="rejectMaint('${m.id}')">Reject</button>`;
+  if(m.status==='Approved') return `<button class="btn small secondary" onclick="assignTech('${m.id}')">Assign Technician</button>`;
+  if(m.status==='Technician Assigned') return `<button class="btn small secondary" onclick="startProgress('${m.id}')">Mark In Progress</button>`;
+  if(m.status==='In Progress') return `<button class="btn small teal" onclick="resolveMaint('${m.id}')">Mark Resolved</button>`;
+  return `<span class="hint">Closed</span>`;
+}
+function openRaiseMaintenance(){
+  openModal(`
+    <div class="modal-title">Raise maintenance request</div>
+    <div class="field"><label>Asset</label><select id="f-massett">${S.assets.filter(a=>a.status!=='Disposed').map(a=>`<option value="${a.id}">${a.id} — ${a.name}</option>`).join('')}</select></div>
+    <div class="field"><label>Describe the issue</label><textarea id="f-missue" placeholder="What's wrong with it?"></textarea></div>
+    <div class="field-row">
+      <div class="field"><label>Priority</label><select id="f-mprio"><option>Low</option><option selected>Medium</option><option>High</option></select></div>
+      <div class="field"><label>Attach photo (optional)</label><input id="f-mphoto" type="text" placeholder="filename.jpg"></div>
+    </div>
+    <div class="modal-foot"><button class="btn secondary" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveMaintenance()">Submit request</button></div>
+  `);
+}
+function saveMaintenance(){
+  const assetId=document.getElementById('f-massett').value;
+  const issue=document.getElementById('f-missue').value.trim();
+  if(!issue){ toast('Describe the issue before submitting.'); return; }
+  const priority=document.getElementById('f-mprio').value;
+  const m={id:uid('MR'), assetId, issue, priority, status:'Pending', requestedBy:currentUser.id, approvedBy:null, technician:null, date:now().toISOString().slice(0,10)};
+  S.maintenance.push(m);
+  log(`Raised maintenance request for ${assetId}: ${issue.slice(0,40)}`);
+  notify('Maintenance Requested', `New ${priority} priority request for ${assetName(assetId)}.`);
+  closeModal(); toast('Maintenance request submitted.'); renderMain();
+}
+function approveMaint(id){
+  const m=S.maintenance.find(x=>x.id===id); m.status='Approved'; m.approvedBy=currentUser.id;
+  const a=S.assets.find(x=>x.id===m.assetId); a.status='Under Maintenance';
+  a.history.push({type:'maintenance', text:'Maintenance approved — status set to Under Maintenance', date:now().toISOString().slice(0,10)});
+  log(`Approved maintenance for ${m.assetId}`);
+  notify('Maintenance Approved', `Request for ${assetName(m.assetId)} approved by ${currentUser.name}.`);
+  toast('Approved. Asset moved to Under Maintenance.'); renderMain();
+}
+function rejectMaint(id){
+  const m=S.maintenance.find(x=>x.id===id); m.status='Rejected';
+  log(`Rejected maintenance for ${m.assetId}`);
+  notify('Maintenance Rejected', `Request for ${assetName(m.assetId)} was rejected.`);
+  toast('Request rejected.'); renderMain();
+}
+function assignTech(id){
+  openModal(`
+    <div class="modal-title">Assign technician</div>
+    <div class="field"><label>Technician name</label><input id="f-techname" placeholder="e.g. Ravi (external vendor)"></div>
+    <div class="modal-foot"><button class="btn secondary" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveTech('${id}')">Assign</button></div>
+  `);
+}
+function saveTech(id){
+  const name=document.getElementById('f-techname').value.trim()||'Unassigned Vendor';
+  const m=S.maintenance.find(x=>x.id===id); m.technician=name; m.status='Technician Assigned';
+  log(`Assigned technician ${name} to ${m.assetId} repair`);
+  closeModal(); toast('Technician assigned.'); renderMain();
+}
+function startProgress(id){
+  const m=S.maintenance.find(x=>x.id===id); m.status='In Progress';
+  log(`Repair in progress for ${m.assetId}`);
+  toast('Marked in progress.'); renderMain();
+}
+function resolveMaint(id){
+  const m=S.maintenance.find(x=>x.id===id); m.status='Resolved';
+  const a=S.assets.find(x=>x.id===m.assetId); a.status='Available';
+  a.history.push({type:'maintenance', text:'Maintenance resolved — status back to Available', date:now().toISOString().slice(0,10)});
+  log(`Resolved maintenance for ${m.assetId}`);
+  notify('Maintenance Resolved', `${assetName(m.assetId)} repaired and back to Available.`);
+  toast('Marked resolved. Asset is Available again.'); renderMain();
+}
+
